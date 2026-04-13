@@ -1,0 +1,16 @@
+---
+# Database connection — overridden at runtime via -e flags in the pipeline
+mysql_host: "REPLACE_WITH_MYSQL_FQDN"
+mysql_user: "epicadmin"
+mysql_password: "UseAStrongPassword123!"
+mysql_db: "bookstore"
+
+# App settings
+app_dir: /opt/epicbook
+app_user: azureuser
+app_repo: "https://github.com/sqenchill/theepicbook.git"
+app_port: 8080
+
+# Backend private IP used by Nginx on the frontend
+# Overridden at runtime via -e flag in the pipeline
+backend_private_ip: "REPLACE_WITH_BACKEND_PRIVATE_IP"

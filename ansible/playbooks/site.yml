@@ -1,0 +1,17 @@
+---
+- name: Configure Backend VM (Node.js + EpicBook app)
+  hosts: backend
+  become: yes
+
+  roles:
+    - common
+    - nodejs
+    - epicbook
+
+- name: Configure Frontend VM (Nginx reverse proxy)
+  hosts: frontend
+  become: yes
+
+  roles:
+    - common
+    - nginx

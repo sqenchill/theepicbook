@@ -1,0 +1,9 @@
+---
+- name: Configure Backend VM
+  hosts: backend
+  become: yes
+
+  roles:
+    - common
+    - nodejs
+    - epicbook

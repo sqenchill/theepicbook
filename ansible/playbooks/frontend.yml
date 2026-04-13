@@ -1,0 +1,8 @@
+---
+- name: Configure Frontend VM
+  hosts: frontend
+  become: yes
+
+  roles:
+    - common
+    - nginx

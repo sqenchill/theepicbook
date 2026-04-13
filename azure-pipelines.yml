@@ -1,0 +1,80 @@
+trigger:
+- main
+
+jobs:
+- job: DeployEpicBook
+  displayName: "Configure and Deploy EpicBook with Ansible"
+  timeoutInMinutes: 60
+
+  pool:
+    name: Default
+
+  variables:
+    APP_PUBLIC_IP: ''
+    BACKEND_PUBLIC_IP: ''
+    BACKEND_PRIVATE_IP: ''
+    MYSQL_FQDN: ''
+
+  steps:
+  - checkout: self
+
+  - script: |
+      echo "=== Installing Ansible ==="
+      sudo apt-get update -y
+      sudo apt-get install -y ansible python3-pip
+      pip3 install boto3 botocore --quiet
+      ansible --version
+    displayName: "Install Ansible"
+
+  - task: DownloadSecureFile@1
+    name: sshKey
+    displayName: "Download SSH Private Key"
+    inputs:
+      secureFile: 'epicbook-azure-key'
+
+  - script: |
+      mkdir -p ~/.ssh
+      cp $(sshKey.secureFilePath) ~/.ssh/epicbook-azure-key
+      chmod 600 ~/.ssh/epicbook-azure-key
+      echo "SSH key placed at ~/.ssh/epicbook-azure-key"
+    displayName: "Configure SSH Key"
+
+  - script: |
+      cat > $(System.DefaultWorkingDirectory)/ansible/inventory/hosts.ini <<HOSTSEOF
+      [frontend]
+      $(APP_PUBLIC_IP) ansible_user=azureuser ansible_ssh_private_key_file=~/.ssh/epicbook-azure-key ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+
+      [backend]
+      $(BACKEND_PUBLIC_IP) ansible_user=azureuser ansible_ssh_private_key_file=~/.ssh/epicbook-azure-key ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+      HOSTSEOF
+      sed -i 's/^      //' $(System.DefaultWorkingDirectory)/ansible/inventory/hosts.ini
+      echo "=== Ansible Inventory ==="
+      cat $(System.DefaultWorkingDirectory)/ansible/inventory/hosts.ini
+    displayName: "Build Ansible Inventory"
+
+  - script: |
+      cd $(System.DefaultWorkingDirectory)/ansible
+      export ANSIBLE_HOST_KEY_CHECKING=False
+      ansible-playbook \
+        -i inventory/hosts.ini \
+        playbooks/site.yml \
+        -e "mysql_host=$(MYSQL_FQDN)" \
+        -e "mysql_user=epicadmin" \
+        -e "mysql_password=UseAStrongPassword123!" \
+        -e "mysql_db=bookstore" \
+        -e "backend_private_ip=$(BACKEND_PRIVATE_IP)" \
+        -v
+    displayName: "Run Ansible Playbooks"
+
+  - script: |
+      echo "=== Waiting 30s for app to fully start ==="
+      sleep 30
+      HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 http://$(APP_PUBLIC_IP) || echo "000")
+      echo "HTTP response code: $HTTP_CODE"
+      if [ "$HTTP_CODE" = "200" ]; then
+        echo "SUCCESS: EpicBook is running at http://$(APP_PUBLIC_IP)"
+      else
+        echo "WARNING: Got HTTP $HTTP_CODE — check Nginx and Node.js service on the VMs"
+        exit 1
+      fi
+    displayName: "Verify EpicBook Deployment"

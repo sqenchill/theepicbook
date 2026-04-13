@@ -1,0 +1,82 @@
+---
+- name: Create app directory
+  file:
+    path: "{{ app_dir }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0755'
+
+- name: Clone EpicBook repository
+  git:
+    repo: "{{ app_repo }}"
+    dest: "{{ app_dir }}"
+    version: main
+    force: yes
+  become_user: "{{ app_user }}"
+
+- name: Deploy database config
+  template:
+    src: config.json.j2
+    dest: "{{ app_dir }}/config/config.json"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0644'
+
+- name: Install npm dependencies
+  community.general.npm:
+    path: "{{ app_dir }}"
+    state: present
+  become_user: "{{ app_user }}"
+
+- name: Seed database schema
+  shell: >
+    mysql -h {{ mysql_host }} -u {{ mysql_user }} -p{{ mysql_password }}
+    {{ mysql_db }} < {{ app_dir }}/db/BuyTheBook_Schema.sql
+  args:
+    executable: /bin/bash
+  register: schema_result
+  failed_when: schema_result.rc != 0 and 'already exists' not in schema_result.stderr
+
+- name: Seed author data
+  shell: >
+    mysql -h {{ mysql_host }} -u {{ mysql_user }} -p{{ mysql_password }}
+    {{ mysql_db }} < {{ app_dir }}/db/author_seed.sql
+  args:
+    executable: /bin/bash
+  register: author_result
+  failed_when: author_result.rc != 0 and 'Duplicate' not in author_result.stderr
+
+- name: Seed books data
+  shell: >
+    mysql -h {{ mysql_host }} -u {{ mysql_user }} -p{{ mysql_password }}
+    {{ mysql_db }} < {{ app_dir }}/db/books_seed.sql
+  args:
+    executable: /bin/bash
+  register: books_result
+  failed_when: books_result.rc != 0 and 'Duplicate' not in books_result.stderr
+
+- name: Install EpicBook systemd service
+  template:
+    src: epicbook.service.j2
+    dest: /etc/systemd/system/epicbook.service
+    mode: '0644'
+  notify:
+    - Reload systemd
+    - Restart EpicBook
+
+- name: Enable and start EpicBook service
+  systemd:
+    name: epicbook
+    state: started
+    enabled: yes
+    daemon_reload: yes
+
+- name: Verify EpicBook service is running
+  command: systemctl is-active epicbook
+  register: svc_status
+  changed_when: false
+
+- name: Print service status
+  debug:
+    msg: "EpicBook service status: {{ svc_status.stdout }}"

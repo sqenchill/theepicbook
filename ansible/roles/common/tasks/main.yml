@@ -1,0 +1,17 @@
+---
+- name: Update apt cache and upgrade packages
+  apt:
+    update_cache: yes
+    upgrade: safe
+    cache_valid_time: 3600
+
+- name: Install common system packages
+  apt:
+    name:
+      - git
+      - curl
+      - wget
+      - unzip
+      - software-properties-common
+      - mysql-client
+    state: present
