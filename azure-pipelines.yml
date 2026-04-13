@@ -58,6 +58,7 @@ jobs:
   - script: |
       cd $(System.DefaultWorkingDirectory)/ansible
       export ANSIBLE_HOST_KEY_CHECKING=False
+      export ANSIBLE_ROLES_PATH=$(System.DefaultWorkingDirectory)/ansible/roles
       ansible-playbook \
         -i inventory/hosts.ini \
         playbooks/site.yml \
