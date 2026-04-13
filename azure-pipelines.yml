@@ -1,6 +1,20 @@
 trigger:
 - main
 
+parameters:
+- name: APP_PUBLIC_IP
+  displayName: "Frontend VM Public IP (from Infra pipeline outputs)"
+  type: string
+- name: BACKEND_PUBLIC_IP
+  displayName: "Backend VM Public IP (from Infra pipeline outputs)"
+  type: string
+- name: BACKEND_PRIVATE_IP
+  displayName: "Backend VM Private IP (from Infra pipeline outputs)"
+  type: string
+- name: MYSQL_FQDN
+  displayName: "MySQL FQDN (from Infra pipeline outputs)"
+  type: string
+
 jobs:
 - job: DeployEpicBook
   displayName: "Configure and Deploy EpicBook with Ansible"
@@ -9,19 +23,13 @@ jobs:
   pool:
     name: Default
 
-  variables:
-    APP_PUBLIC_IP: ''
-    BACKEND_PUBLIC_IP: ''
-    BACKEND_PRIVATE_IP: ''
-    MYSQL_FQDN: ''
-
   steps:
   - checkout: self
 
   - script: |
       echo "=== Installing Ansible ==="
       if command -v ansible &>/dev/null; then
-        echo "Ansible already installed: $(ansible --version | head -1)"
+        ansible --version | head -1 | xargs echo "Ansible already installed:"
       else
         sudo apt-get update -y
         sudo apt-get install -y ansible
@@ -45,10 +53,10 @@ jobs:
   - script: |
       cat > $(System.DefaultWorkingDirectory)/ansible/inventory/hosts.ini <<HOSTSEOF
       [frontend]
-      $(APP_PUBLIC_IP) ansible_user=azureuser ansible_ssh_private_key_file=~/.ssh/epicbook-azure-key ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+      ${{ parameters.APP_PUBLIC_IP }} ansible_user=azureuser ansible_ssh_private_key_file=~/.ssh/epicbook-azure-key ansible_ssh_common_args='-o StrictHostKeyChecking=no'
 
       [backend]
-      $(BACKEND_PUBLIC_IP) ansible_user=azureuser ansible_ssh_private_key_file=~/.ssh/epicbook-azure-key ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+      ${{ parameters.BACKEND_PUBLIC_IP }} ansible_user=azureuser ansible_ssh_private_key_file=~/.ssh/epicbook-azure-key ansible_ssh_common_args='-o StrictHostKeyChecking=no'
       HOSTSEOF
       sed -i 's/^      //' $(System.DefaultWorkingDirectory)/ansible/inventory/hosts.ini
       echo "=== Ansible Inventory ==="
@@ -62,21 +70,21 @@ jobs:
       ansible-playbook \
         -i inventory/hosts.ini \
         playbooks/site.yml \
-        -e "mysql_host=$(MYSQL_FQDN)" \
+        -e "mysql_host=${{ parameters.MYSQL_FQDN }}" \
         -e "mysql_user=epicadmin" \
         -e "mysql_password=UseAStrongPassword123!" \
         -e "mysql_db=bookstore" \
-        -e "backend_private_ip=$(BACKEND_PRIVATE_IP)" \
+        -e "backend_private_ip=${{ parameters.BACKEND_PRIVATE_IP }}" \
         -v
     displayName: "Run Ansible Playbooks"
 
   - script: |
       echo "=== Waiting 30s for app to fully start ==="
       sleep 30
-      HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 http://$(APP_PUBLIC_IP) || echo "000")
+      HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 http://${{ parameters.APP_PUBLIC_IP }} || echo "000")
       echo "HTTP response code: $HTTP_CODE"
       if [ "$HTTP_CODE" = "200" ]; then
-        echo "SUCCESS: EpicBook is running at http://$(APP_PUBLIC_IP)"
+        echo "SUCCESS: EpicBook is running at http://${{ parameters.APP_PUBLIC_IP }}"
       else
         echo "WARNING: Got HTTP $HTTP_CODE — check Nginx and Node.js service on the VMs"
         exit 1
